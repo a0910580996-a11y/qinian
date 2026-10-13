@@ -1,0 +1,6 @@
+node_modules/
+.work/
+*.local.json
+qinian-*.json
+人生档案-*.zip
+.claude/
