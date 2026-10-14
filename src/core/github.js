@@ -26,6 +26,17 @@ function toBase64(text) {
   return btoa(binary)
 }
 
+// 和 git 一样算文件的 blob sha，用来判断云端的文件是不是已经是这份内容。
+export async function blobSha(text) {
+  const body = new TextEncoder().encode(text)
+  const head = new TextEncoder().encode(`blob ${body.length}\0`)
+  const all = new Uint8Array(head.length + body.length)
+  all.set(head)
+  all.set(body, head.length)
+  const hash = await crypto.subtle.digest('SHA-1', all)
+  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
 export function createGitHub(cfg, fetcher = (...args) => fetch(...args)) {
   const root = `${API}/repos/${cfg.owner}/${cfg.repo}`
 
@@ -67,8 +78,14 @@ export function createGitHub(cfg, fetcher = (...args) => fetch(...args)) {
       return { head, text: typeof text === 'string' ? text : null }
     },
 
-    // 写入一次提交；空仓库先用 contents 接口建出第一个文件。head 不是最新时抛出 conflict。
-    async push(branch, head, files, message) {
+    // 某个提交里所有文件的路径 → blob sha。
+    async list(head) {
+      const tree = await request(`/git/trees/${head}?recursive=1`)
+      return new Map(tree.tree.filter(t => t.type === 'blob').map(t => [t.path, t.sha]))
+    },
+
+    // 写入一次提交（removed 里的路径删掉）；空仓库先用 contents 接口建出第一个文件。head 不是最新时抛出 conflict。
+    async push(branch, head, files, message, removed = []) {
       let parent = head
       let rest = files
       if (!parent) {
@@ -76,10 +93,14 @@ export function createGitHub(cfg, fetcher = (...args) => fetch(...args)) {
         const created = await request('/contents/data.json', { method: 'PUT', body: { message, content: toBase64(data.content) } })
         parent = created.commit.sha
         rest = files.filter(f => f !== data)
-        if (!rest.length) return parent
+        if (!rest.length && !removed.length) return parent
       }
       const commit = await request(`/git/commits/${parent}`)
-      const tree = await request('/git/trees', { method: 'POST', body: { base_tree: commit.tree.sha, tree: rest.map(f => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })) } })
+      const entries = [
+        ...rest.map(f => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })),
+        ...removed.map(path => ({ path, mode: '100644', type: 'blob', sha: null }))
+      ]
+      const tree = await request('/git/trees', { method: 'POST', body: { base_tree: commit.tree.sha, tree: entries } })
       const next = await request('/git/commits', { method: 'POST', body: { message, tree: tree.sha, parents: [parent] } })
       await request(`/git/refs/heads/${encodeURIComponent(branch)}`, { method: 'PATCH', body: { sha: next.sha, force: false } })
       return next.sha

@@ -1,11 +1,11 @@
 // 跨设备同步的调度：什么时候同步、怎么合并、怎么写回本机。
 // 配置（仓库、令牌、设备名）和上次同步的共同版本只存在这台设备的 IndexedDB 里，不进备份、不进仓库。
 import * as store from '../core/store.js'
-import { createGitHub, SyncError } from '../core/github.js'
+import { createGitHub, blobSha, SyncError } from '../core/github.js'
 import { migrate } from '../core/migrate.js'
 import { todayKey } from '../core/dates.js'
 import { merge3, deepEqual, toPayload, fromPayload, fixNumbering, isPristine, countChanges } from '../domain/merge.js'
-import { buildArchive } from '../domain/archive.js'
+import { buildArchive, isArchivePath } from '../domain/archive.js'
 
 let status = { state: 'off', at: null, message: '' }
 let running = null
@@ -62,10 +62,14 @@ export async function verify(cfg) {
   return info
 }
 
-// 只把有变化的可读文件写进提交；data.json 永远是完整数据。
-function changedFiles(before, after) {
-  const prev = new Map(before ? buildArchive(before).entries.map(e => [e.path, e.data]) : [])
-  return buildArchive(after).entries.filter(e => prev.get(e.path) !== e.data).map(e => ({ path: e.path, content: e.data }))
+// 让云端的可读文件和完整档案保持一致：内容不同的重写，档案已经不再生成的删掉；data.json 永远是完整数据。
+async function diffFiles(state, existing) {
+  const entries = buildArchive(state).entries
+  const files = []
+  for (const e of entries) if (existing.get(e.path) !== (await blobSha(e.data))) files.push({ path: e.path, content: e.data })
+  const keep = new Set(entries.map(e => e.path))
+  const removed = [...existing.keys()].filter(path => isArchivePath(path) && !keep.has(path))
+  return { files, removed }
 }
 
 async function runSync({ choice } = {}) {
@@ -100,10 +104,9 @@ async function runSync({ choice } = {}) {
     fixNumbering(merged, base?.data || remoteData)
     let head = remote.head
     if (!remoteData || !deepEqual(merged, remoteData)) {
-      // 云端现有的可读文件，就是按云端 data.json 生成的那一套：只推送和它不同的文件。
-      const files = changedFiles(remoteData, merged)
+      const { files, removed } = await diffFiles(merged, remote.head ? await gh.list(remote.head) : new Map())
       try {
-        head = await gh.push(branch, remote.head, files, `同步：${cfg.device || '这台设备'} ${new Date().toLocaleString('zh-CN', { hour12: false })}`)
+        head = await gh.push(branch, remote.head, files, `同步：${cfg.device || '这台设备'} ${new Date().toLocaleString('zh-CN', { hour12: false })}`, removed)
       } catch (error) {
         if (error.code === 'conflict' && attempt < 2) continue // 刚好有别的设备推了一版：重新拉取再合并
         throw error

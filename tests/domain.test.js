@@ -9,7 +9,7 @@ import { balances, worth, summarizeMonth, plansMonthly, groupByDay, transferKind
 import { realmOf, pace, neededPerDay } from '../src/domain/skill.js'
 import { nextNumber, itemCode, itemTitle, ranking, dailyPick, safeUrl, setKindNames, kindName } from '../src/domain/library.js'
 import { createZip, readZip, crc32 } from '../src/core/zip.js'
-import { buildArchive, safeName } from '../src/domain/archive.js'
+import { buildArchive, safeName, isArchivePath } from '../src/domain/archive.js'
 import { progress, crossing, academicYears, achievements } from '../src/domain/milestones.js'
 import { createSeed, sealChar } from '../src/domain/seed.js'
 import { sample } from './fixture.js'
@@ -374,6 +374,22 @@ test('人生档案：不依赖网站也能读，附件按编号命名并有索�
   assert.deepEqual(attachments.map(a => a.path), ['附件/琴谱/琴谱 · 001 demo.mp3', '附件/琴谱/琴谱 · 001 demo (2).mp3'])
   assert.deepEqual(JSON.parse(file('附件/索引.json')), { f1: attachments[0].path, f2: attachments[1].path })
   assert.equal(safeName('a/b:c*?.pdf'), 'a_b_c__.pdf')
+})
+
+test('人生档案：分类名取这份数据自己的设置；只清理档案自己生成的文件', () => {
+  const state = structuredClone(seed)
+  state.settings.kindNames = { fragment: '句子', song: '歌单' }
+  state.library.items.push({ id: 's1', kind: 'song', no: 1, title: '平凡之路', addedAt: '2026-10-13', files: [{ id: 'f1', name: 'demo.mp3', type: 'audio/mpeg', size: 3 }] })
+  const { entries, attachments } = buildArchive(state, { today: '2026-10-13' })
+  const file = path => entries.find(e => e.path === path)?.data
+  assert.equal(file('图书馆/残卷.md'), undefined)
+  assert.ok(file('图书馆/句子.md').startsWith('# 句子\n\n## 句子 · 001'))
+  assert.ok(file('图书馆/歌单.md').startsWith('# 歌单（歌曲）'))
+  assert.deepEqual(attachments.map(a => a.path), ['附件/歌单/歌单 · 001 demo.mp3'])
+  assert.ok(file('说明.md').includes('句子、心法、秘籍、演武、歌单'))
+  assert.equal(kindName('fragment'), '残卷') // 页面当前的设置不受影响
+  for (const path of ['data.json', '说明.md', '账本/流水-2026.csv', '图书馆/残卷.md', '感恩/2026.md', '附件/索引.json']) assert.equal(isArchivePath(path), true, path)
+  for (const path of ['历史/2026-10-13.json', '附件/琴谱/琴谱 · 001 demo.mp3', 'README.md', 'desktop.ini', '图书馆/封面.png']) assert.equal(isArchivePath(path), false, path)
 })
 
 test('盘点：没记录的天不计入平均', () => {

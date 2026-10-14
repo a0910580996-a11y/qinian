@@ -2,7 +2,7 @@
 import * as store from '../core/store.js'
 import { createZip } from '../core/zip.js'
 import { todayKey, diffDays } from '../core/dates.js'
-import { buildArchive } from '../domain/archive.js'
+import { buildArchive, isArchivePath } from '../domain/archive.js'
 
 // 只有电脑上的 Chrome / Edge 能直接写本地文件夹。
 export const folderSupported = () => typeof window !== 'undefined' && 'showDirectoryPicker' in window
@@ -65,11 +65,27 @@ async function writeFile(root, path, data, { skipSameSize = false } = {}) {
 
 // 写入整份档案；附件已经在文件夹里（同名同大小）就跳过，所以第二次起很快。
 // 另存一份当天的 data.json 到“历史/”，几十年后也能翻到任何一天的样子。
+// 删掉文件夹里档案已经不再生成的旧文件（见 isArchivePath）；历史快照、附件原件和你自己放的文件不动。
+async function removeStale(root, keep) {
+  async function walk(dir, prefix) {
+    const stale = []
+    for await (const [name, child] of dir.entries()) {
+      const path = prefix + name
+      if (child.kind === 'directory') {
+        if (path !== '历史' && path !== '附件') await walk(child, path + '/')
+      } else if (isArchivePath(path) && !keep.has(path)) stale.push(name)
+    }
+    for (const name of stale) await dir.removeEntry(name).catch(() => {})
+  }
+  await walk(root, '')
+}
+
 export async function backupToFolder(handle, { attachments = true } = {}) {
   const state = store.getState()
   const today = todayKey()
   const archive = buildArchive(state, { today })
   for (const entry of archive.entries) await writeFile(handle, entry.path, entry.data)
+  await removeStale(handle, new Set(archive.entries.map(e => e.path)))
   await writeFile(handle, `历史/${today}.json`, JSON.stringify(state))
   let written = 0
   let missing = 0

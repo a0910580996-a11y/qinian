@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { merge3, deepEqual, toPayload, fromPayload, fixNumbering, isPristine, countChanges } from '../src/domain/merge.js'
-import { createGitHub, contentsUrl } from '../src/core/github.js'
+import { createGitHub, contentsUrl, blobSha } from '../src/core/github.js'
 import { createSeed } from '../src/domain/seed.js'
 import { sample } from './fixture.js'
 
@@ -117,13 +117,20 @@ function fakeGitHub() {
       repo.pending = body.tree
       return json(201, { sha: 'tree-new' })
     }
+    if (path.startsWith('/git/trees/') && method === 'GET') {
+      const tree = await Promise.all(Object.entries(repo.files).map(async ([p, text]) => ({ path: p, type: 'blob', sha: await blobSha(text) })))
+      return json(200, { tree: [...tree, { path: '账本', type: 'tree', sha: 'x' }] })
+    }
     if (path === '/git/commits' && method === 'POST') return json(201, { sha: `c${repo.commits + 1}` })
     if (path === '/git/refs/heads/main' && method === 'PATCH') {
       if (repo.reject) {
         repo.reject = false
         return json(422, { message: 'Update is not a fast forward' })
       }
-      for (const f of repo.pending) repo.files[f.path] = f.content
+      for (const f of repo.pending) {
+        if (f.sha === null) delete repo.files[f.path]
+        else repo.files[f.path] = f.content
+      }
       repo.head = body.sha
       repo.commits++
       return json(200, {})
@@ -132,6 +139,11 @@ function fakeGitHub() {
   }
   return { repo, calls, fetcher }
 }
+
+test('blob sha 与 git 一致', async () => {
+  assert.equal(await blobSha('hello\n'), 'ce013625030ba8dba906f756967f9e9ca394464a')
+  assert.equal(await blobSha('七年'), '672e5e917e93866356d920c73fde857675f13e34')
+})
 
 test('GitHub 客户端：空仓库先建 data.json，之后用提交追加可读文件；冲突时报告', async () => {
   const { repo, calls, fetcher } = fakeGitHub()
@@ -147,5 +159,11 @@ test('GitHub 客户端：空仓库先建 data.json，之后用提交追加可读
   repo.reject = true
   await assert.rejects(gh.push('main', repo.head, [{ path: 'data.json', content: '{"v":2}' }], '冲突'), e => e.code === 'conflict')
   assert.ok(calls.includes('PUT /contents/data.json'))
+  repo.reject = false
+  await gh.push('main', repo.head, [{ path: '图书馆/句子.md', content: '# 句子' }], '改名', ['图书馆/残卷.md'])
+  assert.ok(repo.files['图书馆/句子.md'])
+  const listed = await gh.list(repo.head)
+  assert.deepEqual([...listed.keys()].sort(), ['data.json', '图书馆/句子.md', '账本/流水-2026.csv'])
+  assert.equal(listed.get('data.json'), await blobSha('{"v":1}'))
   assert.equal(contentsUrl({ owner: 'a', repo: 'b' }, '账本/流水.csv'), 'https://api.github.com/repos/a/b/contents/%E8%B4%A6%E6%9C%AC/%E6%B5%81%E6%B0%B4.csv')
 })

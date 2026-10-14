@@ -14,9 +14,10 @@ let customNames = {}
 export function setKindNames(names) {
   customNames = names || {}
 }
-export const kindName = kind => customNames[kind]?.trim() || KINDS[kind].name
+// names 不传时用页面当前的设置；生成档案时传入那份数据自己的设置，保证文件名和内容一致。
+export const kindName = (kind, names = customNames) => names?.[kind]?.trim() || KINDS[kind].name
 
-export const itemCode = item => `${kindName(item.kind)} · ${String(item.no).padStart(3, '0')}`
+export const itemCode = (item, names) => `${kindName(item.kind, names)} · ${String(item.no).padStart(3, '0')}`
 // 标题里本身带书名号时按嵌套规范改成单书名号：《〈把时间当作朋友〉读后》
 export const itemTitle = item => (item.kind === 'fragment' ? item.text : `《${item.title.replace(/《/g, '〈').replace(/》/g, '〉')}》`)
 

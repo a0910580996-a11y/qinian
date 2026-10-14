@@ -113,14 +113,15 @@ function classFiles(state, out) {
 
 function libraryFiles(state, out, attachments) {
   const { library } = state
+  const names = state.settings?.kindNames || {}
   const used = new Set()
   for (const kind of KIND_ORDER) {
     const items = library.items.filter(i => i.kind === kind).sort((a, b) => a.no - b.no)
     if (!items.length) continue
-    const label = kindName(kind)
-    const lines = [`# ${label}（${KINDS[kind].noun}）`, '']
+    const label = kindName(kind, names)
+    const lines = [label === KINDS[kind].noun ? `# ${label}` : `# ${label}（${KINDS[kind].noun}）`, '']
     for (const item of items) {
-      lines.push(`## ${itemCode(item)}`, '')
+      lines.push(`## ${itemCode(item, names)}`, '')
       lines.push(kind === 'fragment' ? `> ${item.text.replace(/\n/g, '\n> ')}` : itemTitle(item), '')
       if (item.source && kind === 'fragment') lines.push(`来源：${item.source}`)
       if (item.author) lines.push(`${kind === 'song' ? '歌手' : '作者'}：${item.author}`)
@@ -129,7 +130,7 @@ function libraryFiles(state, out, attachments) {
       if (item.addedAt) lines.push(`入阁：${item.addedAt}`)
       if (item.note) lines.push('', `感想：${item.note}`)
       for (const f of item.files || []) {
-        let path = `附件/${safeName(label)}/${safeName(`${itemCode(item)} ${f.name}`)}`
+        let path = `附件/${safeName(label)}/${safeName(`${itemCode(item, names)} ${f.name}`)}`
         for (let n = 2; used.has(path); n++) path = path.replace(/(\.[^./]*)?$/, ` (${n})$1`)
         used.add(path)
         attachments.push({ id: f.id, path })
@@ -146,7 +147,7 @@ function libraryFiles(state, out, attachments) {
       path: '图书馆/实践记录.csv',
       data: csv([['日期', '条目', '解决了什么问题'], ...[...library.uses].sort((a, b) => a.date.localeCompare(b.date)).map(u => {
         const item = library.items.find(i => i.id === u.itemId)
-        return [u.date, item ? `${itemCode(item)} ${itemTitle(item)}` : '（已删除）', u.note || '']
+        return [u.date, item ? `${itemCode(item, names)} ${itemTitle(item)}` : '（已删除）', u.note || '']
       })])
     })
   }
@@ -192,10 +193,10 @@ export function buildArchive(state, { today = todayKey() } = {}) {
         '- `时间日志/`、`感恩/`：按月、按年的 Markdown 文本。',
         '- `修炼/`：每项技能的练习记录表。',
         '- `课堂/`：每次签到专注的计划时间、实际签到签退、有效分钟与在做什么。',
-        '- `图书馆/`：残卷、心法、秘籍、演武、琴谱，以及实践记录。',
+        `- \`图书馆/\`：${KIND_ORDER.map(k => kindName(k, state.settings?.kindNames)).join('、')}，以及实践记录。`,
         '- `附件/`：图书馆里的原始文件，按条目编号命名。',
         '- `里程碑.md`：各辈子的目标与纪事。',
-        '- `data.json` 与 `附件/索引.json`：完整数据，在网站「设置 → 数据 → 导入备份」里选这个 zip（或把整个文件夹重新压缩）即可恢复。',
+        '- `data.json` 与 `附件/索引.json`：完整数据，在网站「设置 → 数据与备份 → 从备份恢复」里选这个 zip（或把整个文件夹重新压缩）即可恢复。',
         ''
       ].join('\n')
     },
@@ -204,3 +205,9 @@ export function buildArchive(state, { today = todayKey() } = {}) {
   )
   return { entries, attachments }
 }
+
+// 档案自己生成的文件。同步和备份时，这类文件里档案已经不再生成的（比如分类改了名、某类收藏清空了）会被删掉，
+// 免得多年后翻到一份过期的；历史快照、附件原件和你自己放进去的文件都不动。
+const OWN_FILES = ['data.json', '说明.md', '里程碑.md', '附件/索引.json']
+const OWN_DIRS = ['账本/', '时间日志/', '感恩/', '修炼/', '课堂/', '图书馆/']
+export const isArchivePath = path => OWN_FILES.includes(path) || (OWN_DIRS.some(d => path.startsWith(d)) && /\.(md|csv)$/.test(path))

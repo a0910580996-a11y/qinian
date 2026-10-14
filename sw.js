@@ -1,6 +1,6 @@
 // 离线支持：联网时优先取最新文件（3 秒没回应就用缓存），断网时用缓存。
 // 只处理本站的 GET 请求，从不碰你的记录——记录在 IndexedDB 里，与这里无关。
-const VERSION = '20261013-15'
+const VERSION = '20261014-1'
 const CACHE = `qinian-${VERSION}`
 // FILES 由 scripts/release.js 生成，不要手改
 const FILES = [
