@@ -1,4 +1,4 @@
-import { monthOf, addMonths, daysInMonth, pad } from '../core/dates.js'
+import { monthOf, addMonths, addDays, diffDays, daysInMonth, pad } from '../core/dates.js'
 
 // 账本 = 两张表 + 四笔钱：
 // · 资产负债表（存量）——此刻我有什么、欠什么：活钱 + 稳钱 + 长钱 − 负债 = 净资产。
@@ -189,6 +189,21 @@ export function monthBudget(ledger, today) {
   }
 }
 
+// 不知道每月生活费填多少时的参考：每月稳定收入（学生的花销大多以生活费为限），或者把最近记账的天数折成一个月。
+export function livingHints(ledger, today) {
+  const hints = []
+  const stable = ledger.streams.filter(s => s.stability === 'stable' && s.monthly > 0).reduce((t, s) => t + s.monthly, 0)
+  if (stable) hints.push({ amount: stable, label: '按每月稳定收入' })
+  const first = ledger.entries.filter(e => e.type === 'expense').map(e => e.date).sort()[0]
+  if (first) {
+    const from = first > addDays(today, -29) ? first : addDays(today, -29)
+    const days = diffDays(from, today) + 1
+    const spent = entriesIn(ledger, from, today).filter(e => e.type === 'expense').reduce((t, e) => t + e.amount, 0)
+    if (days >= 7 && spent > 0) hints.push({ amount: Math.max(10000, Math.round((spent / days) * 30 / 10000) * 10000), label: `按最近 ${days} 天的记账估算` })
+  }
+  return hints
+}
+
 // 活钱：按每月生活费，放够“下限—上限”个月（默认 3–6 个月）。
 export function liquidity(ledger, today) {
   const { cash } = worth(ledger)
@@ -243,8 +258,10 @@ export function nextStep(ledger, today) {
 }
 
 // 分一笔钱（这笔钱眼下在活钱里）：先保证活钱不低于下限，再补稳钱的缺口，剩下的给长钱。
+// 还不知道每月生活费时算不出下限，宁可全部留在活钱，也不往下流。
 export function allocate(ledger, today, amount) {
   const cash = liquidity(ledger, today)
+  if (cash.status === 'unknown') return { keep: amount, stable: 0, long: 0 }
   const stable = stableNeed(ledger)
   const keep = Math.min(amount, Math.max(0, cash.minAmount - (cash.amount - amount)))
   const rest = amount - keep

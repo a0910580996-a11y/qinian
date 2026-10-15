@@ -1107,6 +1107,23 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-2); font:
 .next-step { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent); border-radius: 14px; background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
 .next-step-label { flex: none; padding: 2px 8px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 600; }
 .next-step p { font-size: 14px; line-height: 1.7; }
+.next-step-body { display: grid; gap: 10px; min-width: 0; flex: 1; }
+.next-step-body p b { font-weight: 600; margin-right: 4px; }
+.next-step-body .muted.small { font-size: 12.5px; }
+.living-quick { display: flex; gap: 8px; max-width: 360px; }
+.living-quick .input { flex: 1; min-width: 0; }
+.living-hints { display: flex; flex-wrap: wrap; gap: 6px; }
+.buckets-guide { display: grid; gap: 8px; margin: 0 0 14px; padding: 0; list-style: none; }
+@media (min-width: 720px) { .buckets-guide { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.buckets-guide li { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 12px; color: var(--ink-3); }
+.buckets-guide li.is-now { background: var(--surface); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+.guide-no { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line); font-size: 12px; font-weight: 600; }
+.guide-no .icon { width: 13px; height: 13px; }
+.is-now .guide-no { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+.is-done .guide-no { border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); }
+.guide-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.guide-text b { font-size: 13.5px; font-weight: 600; }
+.guide-text small { font-size: 12px; line-height: 1.6; }
 .buckets { display: grid; gap: 12px; margin-bottom: 16px; }
 @media (min-width: 760px) { .buckets { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1180px) { .buckets { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
@@ -1119,13 +1136,13 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-2); font:
 .bucket-purpose { font-size: 12px; color: var(--ink-3); }
 .bucket-amount { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
 .bucket-status { font-size: 13px; color: var(--ink-2); }
-.bucket-status.is-low { color: var(--debt); }
+.bucket-status.is-low { color: var(--ink-2); }
 .bucket-status.is-high { color: var(--gold); }
 .bucket-note { font-size: 12px; color: var(--ink-3); }
 .range-meter { position: relative; height: 8px; margin-top: 4px; overflow: hidden; border-radius: 4px; background: var(--surface-2); }
 .range-band { position: absolute; top: 0; bottom: 0; left: var(--x); width: var(--w); background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .range-fill { position: absolute; inset: 0 auto 0 0; width: var(--w); border-radius: 4px; background: var(--accent); transition: width 0.6s var(--ease); }
-.range-fill.is-low { background: var(--debt); }
+.range-fill.is-low { background: color-mix(in srgb, var(--accent) 55%, transparent); }
 .range-fill.is-high { background: var(--gold); }
 .range-scale { position: relative; height: 16px; font-size: 10.5px; color: var(--ink-4); }
 .range-scale span { position: absolute; left: var(--x); transform: translateX(-50%); white-space: nowrap; }

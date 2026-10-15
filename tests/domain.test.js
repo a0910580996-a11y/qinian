@@ -5,7 +5,7 @@ import { parseAmount, yuan } from '../src/core/money.js'
 import { normalizeLives, lifePosition, withFuture, lifeYears, ageOn, nextBirthday } from '../src/domain/life.js'
 import { coursesFor, weekOf, locateNow, blocksToLog } from '../src/domain/schedule.js'
 import { parseLog, parseLine, summarize, ribbon } from '../src/domain/timelog.js'
-import { balances, worth, summarizeMonth, plansMonthly, groupByDay, transferKind, monthlyNeed, liquidity, stableNeed, nextStep, allocate, monthBudget, health, netWorthSeries } from '../src/domain/ledger.js'
+import { balances, worth, summarizeMonth, plansMonthly, groupByDay, transferKind, monthlyNeed, liquidity, stableNeed, nextStep, allocate, monthBudget, health, netWorthSeries, livingHints } from '../src/domain/ledger.js'
 import { realmOf, pace, neededPerDay } from '../src/domain/skill.js'
 import { nextNumber, itemCode, itemTitle, ranking, dailyPick, safeUrl, setKindNames, kindName } from '../src/domain/library.js'
 import { createZip, readZip, crc32 } from '../src/core/zip.js'
@@ -211,6 +211,21 @@ test('四笔钱：先活钱、再保险、再稳钱、最后长钱', () => {
   ledger.stableGoals = []
   ledger.accounts.find(a => a.id === 'reserve').opening = 800000
   assert.deepEqual(nextStep(ledger, '2026-10-13'), { bucket: 'long', kind: 'move', gap: 200000 })
+})
+
+test('四笔钱：不知道每月生活费时一分也不往下流；给出填多少的参考', () => {
+  const ledger = structuredClone(seed.ledger)
+  ledger.accounts.find(a => a.id === 'wechat').opening = 80000
+  ledger.entries = [{ id: 'i', date: '2026-10-13', type: 'income', amount: 50000, account: 'wechat' }]
+  assert.equal(nextStep(ledger, '2026-10-15').kind, 'setup')
+  assert.deepEqual(allocate(ledger, '2026-10-15', 50000), { keep: 50000, stable: 0, long: 0 })
+  assert.deepEqual(livingHints(ledger, '2026-10-15'), [])
+  ledger.streams.find(s => s.id === 'parents-regular').monthly = 150000
+  for (let d = 1; d <= 9; d++) ledger.entries.push({ id: `e${d}`, date: `2026-10-0${d}`, type: 'expense', amount: 4500, category: 'meal', account: 'wechat' })
+  assert.deepEqual(livingHints(ledger, '2026-10-10'), [
+    { amount: 150000, label: '按每月稳定收入' },
+    { amount: 120000, label: '按最近 10 天的记账估算' }
+  ])
 })
 
 test('本月可支配：收入先扣固定开销，已付的固定开销不重复扣', () => {

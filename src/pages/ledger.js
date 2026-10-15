@@ -5,7 +5,7 @@ import { uid } from '../core/store.js'
 import {
   ACCOUNT_KINDS, BUCKETS, POLICY_TYPES, INCOME_LEVELS, STABILITY, SOURCE_GROUPS,
   balances, health, transferKind, summarizeMonth, entriesOfMonth, groupByDay, fixedTotal, plansMonthly, netWorthSeries,
-  liquidity, stableNeed, insurance, nextStep, allocate, monthBudget
+  liquidity, stableNeed, insurance, nextStep, allocate, monthBudget, livingHints
 } from '../domain/ledger.js'
 import { icon } from '../ui/icons.js'
 import { pageHead, segmented, empty, stat, field, sheetHead, sheetActions, options, meter } from '../ui/parts.js'
@@ -184,8 +184,7 @@ function cashflow(ctx, month) {
 
 // ---------- 四笔钱 ----------
 const STEP_TEXT = {
-  setup: () => '先在下方「活钱规则」里填每月生活费（不填就等记满一个月自动估算），四笔钱才知道各自该放多少。',
-  'fill-cash': s => `活钱还差 ${yuan(s.gap)} 才到下限。新的结余先留在活钱里，应急的底子最要紧。`,
+  'fill-cash': s => `现在只做一件事：攒活钱。离下限还差 ${yuan(s.gap)}，新的结余都先留在活钱里，保险、稳钱、长钱先不用管。`,
   'review-insurance': () => '活钱够了。下一步看看保障：你现在有哪些保险？学校医保、城乡居民医保、意外险都算，记下来心里有数。',
   'fill-stable': s => `活钱和保险都就位了。稳钱目标还差 ${yuan(s.gap)}：活钱超过下限的部分，可以用下面的“分一笔钱”挪过去。`,
   'move-long': s => `活钱比上限多出 ${yuan(s.gap)}，稳钱也够了。多出来的可以分给长钱，交给时间。`,
@@ -216,10 +215,48 @@ function allocationRows(ctx, amount) {
   const stableAccounts = ledger.accounts.filter(a => a.kind === 'stable')
   const longAccounts = ledger.accounts.filter(a => a.kind === 'long')
   return html`<div class="alloc-rows">
-    <div class="alloc-row"><span class="alloc-label"><b>留在活钱</b><small>${liq.status === 'unknown' ? '还不知道活钱下限' : plan.keep ? '保证活钱不低于下限' : '活钱已经够了'}</small></span><span class="alloc-value">${yuan(plan.keep)}</span></div>
-    <label class="alloc-row"><span class="alloc-label"><b>转入稳钱</b><small>${stableNeed(ledger).gap ? `稳钱目标还差 ${yuan(stableNeed(ledger).gap)}` : '稳钱目标已备齐'}</small></span><input name="stable" class="input" inputmode="decimal" value="${amountInput(plan.stable)}" placeholder="0"><select name="stableTo" class="input">${options(stableAccounts, stableAccounts[0]?.id)}</select></label>
+    <div class="alloc-row"><span class="alloc-label"><b>留在活钱</b><small>${liq.status === 'unknown' ? '还不知道活钱下限，先都留着' : plan.keep ? '保证活钱不低于下限' : '活钱已经够了'}</small></span><span class="alloc-value">${yuan(plan.keep)}</span></div>
+    <label class="alloc-row"><span class="alloc-label"><b>转入稳钱</b><small>${stableNeed(ledger).gap ? `稳钱目标还差 ${yuan(stableNeed(ledger).gap)}` : stableNeed(ledger).target ? '稳钱目标已备齐' : '还没有稳钱目标'}</small></span><input name="stable" class="input" inputmode="decimal" value="${amountInput(plan.stable)}" placeholder="0"><select name="stableTo" class="input">${options(stableAccounts, stableAccounts[0]?.id)}</select></label>
     <label class="alloc-row"><span class="alloc-label"><b>转入长钱</b><small>剩下的交给时间</small></span><input name="long" class="input" inputmode="decimal" value="${amountInput(plan.long)}" placeholder="0"><select name="longTo" class="input">${options(longAccounts, longAccounts[0]?.id)}</select></label>
   </div>`
+}
+
+// 四笔钱怎么用：三步，走到哪一步就亮哪一步。
+const GUIDE = [
+  ['定下每月生活费', '活钱该放多少，就按它算：3–6 个月的生活费。'],
+  ['把活钱攒到下限', '照常记账就好，结余自然留在活钱里。'],
+  ['多出来的再分', '活钱够了，再有结余就来「分一笔钱」：先补稳钱目标，剩下的给长钱。']
+]
+
+function guide(stage) {
+  return html`<ol class="buckets-guide">${GUIDE.map(([title, text], i) => html`<li class="${i < stage ? 'is-done' : i === stage ? 'is-now' : ''}">
+    <span class="guide-no">${i < stage ? icon('check') : i + 1}</span><span class="guide-text"><b>${title}</b><small>${text}</small></span>
+  </li>`)}</ol>`
+}
+
+// 第一步：就地填每月生活费，不用翻到页面底部。
+function livingStep(ctx, liq) {
+  const hints = livingHints(ctx.state.ledger, ctx.today)
+  return html`<section class="next-step">
+    <span class="next-step-label">下一步</span>
+    <div class="next-step-body">
+      <p><b>你每月大概花多少钱？</b>不用很准：吃饭、话费、日用、交通加起来估个整数就行，以后随时能改。</p>
+      <form data-form="living" class="living-quick">
+        <input type="hidden" name="minMonths" value="${liq.minMonths}"><input type="hidden" name="maxMonths" value="${liq.maxMonths}">
+        <input name="monthly" class="input" inputmode="decimal" autocomplete="off" placeholder="如 1500" aria-label="每月生活费">
+        <button class="btn primary">定下来</button>
+      </form>
+      ${hints.length ? html`<div class="living-hints">${hints.map(h => html`<button type="button" class="chip" data-action="set-living" data-value="${h.amount}">${h.label} ${yuan(h.amount)}</button>`)}</div>` : ''}
+      <p class="muted small">实在估不出来也没关系，照常记账，记满一个月会自动估算。</p>
+    </div>
+  </section>`
+}
+
+function saveLiving(ctx, living) {
+  ctx.update(s => {
+    s.ledger.living = living
+  })
+  ctx.toast(living.monthly ? `定好了：活钱放 ${yuan(living.monthly * living.minMonths)}–${yuan(living.monthly * living.maxMonths)}` : '已清空每月生活费，改按记账自动估算')
 }
 
 function buckets(ctx) {
@@ -229,20 +266,22 @@ function buckets(ctx) {
   const ins = insurance(ledger)
   const w = health(ledger, ctx.today).worth
   const step = nextStep(ledger, ctx.today)
-  const stepKey = step.kind === 'setup' || step.kind === 'steady' ? step.kind : `${step.kind}-${step.bucket}`
+  const stepKey = step.kind === 'steady' ? step.kind : `${step.kind}-${step.bucket}`
+  const stage = liq.status === 'unknown' ? 0 : liq.status === 'low' ? 1 : 2
   const month = summarizeMonth(ledger, monthOf(ctx.today))
   const suggested = liq.surplus || Math.max(0, month.net)
   const cashAccounts = ledger.accounts.filter(a => a.kind === 'cash')
   const row = (kind, item, main, sub, value) => html`<li class="row"><button class="row-main" data-action="record-edit" data-value="${kind}" data-id="${item.id}"><span class="row-name">${main}</span>${sub ? html`<span class="row-sub">${sub}</span>` : ''}</button><span class="row-value">${value}</span></li>`
   const statusText = {
     unknown: '先设定每月生活费',
-    low: `低于下限，还差 ${yuan(liq.gap)}`,
+    low: `正在攒，离下限还差 ${yuan(liq.gap)}`,
     ok: '在合适的范围里',
     high: `比上限多出 ${yuan(liq.surplus)}`
   }[liq.status]
   return html`
     <p class="buckets-intro">钱按用途分四笔，顺序是 <b>先活钱、再保险、再稳钱、最后长钱</b>：前一笔放够了，多出来的才往下流。</p>
-    <section class="next-step"><span class="next-step-label">下一步</span><p>${STEP_TEXT[stepKey](step)}</p></section>
+    ${guide(stage)}
+    ${step.kind === 'setup' ? livingStep(ctx, liq) : html`<section class="next-step"><span class="next-step-label">下一步</span><p>${STEP_TEXT[stepKey](step)}</p></section>`}
     <div class="buckets">
       ${bucketCard(BUCKETS[0], html`
         <p class="bucket-amount">${yuan(liq.amount)}</p>
@@ -263,7 +302,7 @@ function buckets(ctx) {
         <p class="bucket-note">至少 3 年、最好 5 年以上不动用</p>`, step.bucket === 'long')}
     </div>
 
-    <form data-form="allocate" class="card allocate">
+    ${stage === 2 ? html`<form data-form="allocate" class="card allocate">
       <div class="card-head"><h2 class="card-title">分一笔钱</h2><span class="card-hint">按顺序给出建议，数字可以改</span></div>
       <div class="alloc-top">
         ${field('要分配的钱（现在在活钱里）', html`<input name="amount" class="input input-lg" inputmode="decimal" autocomplete="off" data-input="alloc-amount" value="${amountInput(suggested)}" placeholder="例如本月结余">`)}
@@ -271,7 +310,7 @@ function buckets(ctx) {
       </div>
       <div data-region="alloc-plan">${allocationRows(ctx, suggested)}</div>
       <div class="sheet-actions"><span class="muted small">会记成“转移”，可以撤销</span><span class="grow"></span><button class="btn primary">按这个分配</button></div>
-    </form>
+    </form>` : ''}
 
     <div class="setup-grid">
       <section class="card">
@@ -532,6 +571,10 @@ export default {
       ctx.go(!dated ? `#/ledger/${value}` : month === monthOf(ctx.today) ? `#/ledger/${value}` : `#/ledger/${value}/${month}`, { replace: true })
     },
     'add-entry': ({ ctx }) => entrySheet(ctx, { date: ctx.today }),
+    'set-living': ({ ctx, value }) => {
+      const liq = liquidity(ctx.state.ledger, ctx.today)
+      saveLiving(ctx, { monthly: Number(value), minMonths: liq.minMonths, maxMonths: liq.maxMonths })
+    },
     opening: ({ ctx }) => openingSheet(ctx),
     'record-new': ({ ctx, value }) => recordSheet(ctx, value, null),
     'debt-new': ({ ctx }) => recordSheet(ctx, 'account', null, { kind: 'debt' }),
@@ -647,10 +690,7 @@ export default {
       if (monthly === null) return ctx.toast('金额格式不对')
       const minMonths = Number(data.minMonths) || 3
       const maxMonths = Math.max(minMonths, Number(data.maxMonths) || 6)
-      ctx.update(s => {
-        s.ledger.living = { monthly, minMonths, maxMonths }
-      })
-      ctx.toast('已保存活钱规则')
+      saveLiving(ctx, { monthly, minMonths, maxMonths })
     },
     allocate: ({ data, ctx }) => {
       const parts = [
